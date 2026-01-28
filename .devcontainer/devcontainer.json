@@ -1,0 +1,59 @@
+{
+  "name": "LLM CLI Development",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "args": {
+      "USER_UID": "1000",
+      "USER_GID": "1000"
+    }
+  },
+  "runArgs": [
+    "--security-opt",
+    "apparmor=unconfined",
+    "--security-opt",
+    "seccomp=unconfined"
+  ],
+  "mounts": [
+    "source=${env:SSH_AUTH_SOCK},target=/ssh-agent,type=bind",
+    "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind"
+  ],
+  "remoteUser": "vscode",
+  "containerEnv": {
+    "SSH_AUTH_SOCK": "/ssh-agent",
+    "APP_ENV": "dev"
+  },
+  "forwardPorts": [
+    1455
+  ],
+  "portsAttributes": {
+    "1455": {
+      "label": "Codex auth callback"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "yzhang.markdown-all-in-one",
+        "davidanson.vscode-markdownlint",
+        "redhat.vscode-yaml",
+        "anthropic.claude-code",
+        "openai.codex"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "codex.model": "gpt-5-codex",
+        "codex.reasoningEffort": "medium",
+        "codex.defaultMode": "agent",
+        "codex.enableAutoContext": true,
+        "codex.allowFileEdits": true,
+        "codex.allowTerminalCommands": "ask"
+      }
+    }
+  },
+  "postAttachCommand": [],
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "postCreateCommand": "bash -lc \"mkdir -p ~/.claude && claude --version && mkdir -p ~/.codex && codex --version\""
+}
