@@ -210,6 +210,28 @@ def progression_event_summary(df: pd.DataFrame, exercises: list[str]) -> tuple[i
     return total_events, summary
 
 
+def absolute_progression_kg(df: pd.DataFrame) -> pd.DataFrame:
+    workouts = df[df["type"] == "workout"].copy()
+    if workouts.empty:
+        return pd.DataFrame(columns=["exercise", "progress_kg", "start_weight", "latest_weight"])
+    per_session = (
+        workouts.groupby(["exercise", "date"], as_index=False)["weight"].max()
+        .sort_values(["exercise", "date"])
+    )
+    first = per_session.groupby("exercise", as_index=False).first()
+    last = per_session.groupby("exercise", as_index=False).last()
+    merged = first.merge(last, on="exercise", suffixes=("_start", "_latest"))
+    merged["progress_kg"] = merged["weight_latest"] - merged["weight_start"]
+    return merged.rename(
+        columns={
+            "weight_start": "start_weight",
+            "weight_latest": "latest_weight",
+        }
+    )[
+        ["exercise", "progress_kg", "start_weight", "latest_weight"]
+    ].sort_values("exercise")
+
+
 def stagnation_flag_in_period(
     ex_df: pd.DataFrame, cap: int, start_date: str, end_date: str
 ) -> bool:
@@ -362,20 +384,6 @@ def exercise_snapshot(df: pd.DataFrame, exercise: str) -> dict:
         "best_weight": float(data["weight"].max()),
         "last_date": data["date"].max(),
     }
-
-
-def latest_1rm_average(df: pd.DataFrame) -> float | None:
-    first_set = first_set_1rm(df)
-    if first_set.empty:
-        return None
-    latest = (
-        first_set.sort_values("date")
-        .groupby("exercise", as_index=False)
-        .tail(1)
-    )
-    if latest.empty:
-        return None
-    return float(latest["estimate"].mean())
 
 
 def latest_1rm_table(df: pd.DataFrame) -> pd.DataFrame:
