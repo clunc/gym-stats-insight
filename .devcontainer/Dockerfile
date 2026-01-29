@@ -46,6 +46,11 @@ RUN chown -R ${USER_UID}:${USER_GID} /home/vscode
 RUN echo "vscode ALL=(root) NOPASSWD:ALL" > /etc/sudoers.d/vscode \
     && chmod 0440 /etc/sudoers.d/vscode
 
+# Install Python deps at build time for faster startup
+COPY requirements.txt /tmp/requirements.txt
+RUN python3 -m pip install --no-cache-dir -r /tmp/requirements.txt \
+    && rm -f /tmp/requirements.txt
+
 # Switch to non-root user
 USER vscode
 
