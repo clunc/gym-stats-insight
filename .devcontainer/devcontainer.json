@@ -59,5 +59,6 @@
     "ghcr.io/devcontainers/features/git:1": {},
     "ghcr.io/devcontainers/features/github-cli:1": {}
   },
-  "postCreateCommand": "bash -lc \"mkdir -p ~/.claude && claude --version && mkdir -p ~/.codex && codex --version && python3 -m pip install -r /workspaces/gym-stats-insight/requirements.txt\""
+  "postCreateCommand": "bash -lc \"mkdir -p ~/.claude && claude --version && mkdir -p ~/.codex && codex --version && python3 -m pip install -r /workspaces/gym-stats-insight/requirements.txt\"",
+  "postStartCommand": "bash -lc \"python3 -m pip install -r /workspaces/gym-stats-insight/requirements.txt && if ! pgrep -f 'streamlit run .*app.py' >/dev/null; then nohup streamlit run /workspaces/gym-stats-insight/app.py --server.address 0.0.0.0 --server.port 8501 > /tmp/streamlit.log 2>&1 & fi\""
 }
