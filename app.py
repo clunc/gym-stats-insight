@@ -167,7 +167,7 @@ def exercise_snapshot(df: pd.DataFrame, exercise: str) -> dict:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Gym Stats Insights", layout="wide")
+    st.set_page_config(page_title="Gym Stats Insights", page_icon="💪", layout="wide")
     st.title("Gym Stats Insights")
 
     payload = load_payload(DATA_PATH)
