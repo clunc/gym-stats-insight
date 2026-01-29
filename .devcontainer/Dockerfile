@@ -7,6 +7,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
     build-essential \
     python3 \
+    python3-pip \
+    python3-venv \
     sqlite3 \
     curl \
     ca-certificates \
