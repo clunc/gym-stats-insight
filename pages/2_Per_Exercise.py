@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import altair as alt
+import pandas as pd
 import streamlit as st
 
 from app_utils import (
-    exercise_progression,
+    e1rm_formula_for_exercise,
+    e1rm_latest_delta,
+    e1rm_pr_flags,
+    e1rm_series,
     exercise_snapshot,
-    first_set_1rm,
     load_app_data,
 )
 
@@ -21,75 +24,160 @@ if not data:
 _, _, df = data
 exercises = sorted(df[df["type"] == "workout"]["exercise"].unique())
 
-if exercises:
-    first_set_all = first_set_1rm(df)
-    prog_df = exercise_progression(df)
-    tabs = st.tabs(exercises)
-    for exercise, tab in zip(exercises, tabs):
-        with tab:
-            ex_df = prog_df[prog_df["exercise"] == exercise]
-            snapshot = exercise_snapshot(df, exercise)
+if not exercises:
+    st.info("No exercises available for per-exercise view.")
+    st.stop()
 
-            stat1, stat2, stat3, stat4 = st.columns(4)
-            stat1.metric("Total Sets", snapshot["total_sets"])
-            stat2.metric("Total Reps", snapshot["total_reps"])
-            stat3.metric("Total Volume", f"{snapshot['total_volume']:.0f} kg")
-            stat4.metric("Best Weight", f"{snapshot['best_weight']:.1f} kg")
 
-            st.caption(f"Last session: {snapshot['last_date'] or '—'}")
+def render_exercise_view(selected_exercise: str) -> None:
+    time_range = st.radio(
+        "Time Range",
+        ("1M", "3M", "6M", "YTD", "1Y", "All"),
+        horizontal=True,
+        key=f"time_range_{selected_exercise}",
+    )
+    full_series = e1rm_series(df, selected_exercise)
+    series = full_series
+    if series.empty:
+        st.info("No sessions recorded for this exercise.")
+        return
 
-            if ex_df.empty:
-                st.info("No sessions recorded for this exercise.")
-                continue
+    max_date = series["timestamp"].max()
+    cutoff = None
+    if time_range != "All":
+        if time_range == "YTD":
+            cutoff = pd.Timestamp(year=max_date.year, month=1, day=1, tz=max_date.tz)
+            series = series[series["timestamp"] >= cutoff]
+        else:
+            months = {"1M": 1, "3M": 3, "6M": 6, "1Y": 12}[time_range]
+            cutoff = max_date - pd.DateOffset(months=months)
+            series = series[series["timestamp"] >= cutoff]
 
-            base = alt.Chart(ex_df).encode(
+    series = e1rm_pr_flags(series)
+    full_series = e1rm_pr_flags(full_series)
+    latest = e1rm_latest_delta(series, full_series)
+
+    st.subheader("Overview Stats")
+    snapshot = exercise_snapshot(df, selected_exercise)
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Total Sets", snapshot["total_sets"])
+    col2.metric("Total Reps", snapshot["total_reps"])
+    col3.metric("Total Volume", f"{snapshot['total_volume']:.0f} kg")
+    col4.metric("Best Weight", f"{snapshot['best_weight']:.1f} kg")
+
+    st.subheader("Current E1RM")
+    if latest["current"] is None:
+        st.caption("No 1RM estimates available.")
+    else:
+        delta = latest["delta_pct"]
+        delta_abs = latest["delta_abs"]
+        if delta is None or delta_abs is None:
+            delta_label = "—"
+        else:
+            delta_label = f"{delta_abs:+.1f} kg ({delta:+.1f}%)"
+        st.metric(
+            "E1RM (with CI)",
+            f"{latest['current']:.1f} kg ± {abs(latest['current'] - latest['ci_low']):.1f} kg",
+            delta_label,
+        )
+        formula_name, formula = e1rm_formula_for_exercise(selected_exercise)
+        st.caption(f"Formula (first set, {formula_name}): {formula}")
+
+    st.subheader("E1RM Progression")
+    ci_band = (
+        alt.Chart(series)
+        .mark_area(opacity=0.2)
+        .encode(
+            x=alt.X("date:T", title="Date"),
+            y=alt.Y("ci_low:Q", title="1RM (kg)", scale=alt.Scale(zero=False)),
+            y2="ci_high:Q",
+        )
+        .properties(height=240)
+    )
+    est_line = (
+        alt.Chart(series)
+        .mark_line(point=True)
+        .encode(
+            x=alt.X("date:T", title="Date"),
+            y=alt.Y("estimate:Q", title="1RM (kg)", scale=alt.Scale(zero=False)),
+            tooltip=["date:T", "estimate:Q", "ci_low:Q", "ci_high:Q"],
+        )
+        .properties(height=240)
+    )
+    pr_points = (
+        alt.Chart(series[series["pr"]])
+        .mark_point(color="gold", size=80)
+        .encode(x="date:T", y="estimate:Q", tooltip=["date:T", "estimate:Q"])
+    )
+    st.altair_chart(ci_band + est_line + pr_points, use_container_width=True)
+
+    st.subheader("Session History")
+    ex_df = df[(df["type"] == "workout") & (df["exercise"] == selected_exercise)].copy()
+    if cutoff is not None:
+        ex_df = ex_df[ex_df["timestamp"] >= cutoff]
+    if ex_df.empty:
+        st.caption("No session history.")
+    else:
+        weight_by_set = (
+            ex_df.pivot_table(index="date", columns="setNumber", values="weight", aggfunc="max")
+            .rename(columns={1: "Set 1", 2: "Set 2", 3: "Set 3"})
+            .reset_index()
+        )
+        weight_long = weight_by_set.melt("date", var_name="set", value_name="weight").dropna()
+        weight_chart = (
+            alt.Chart(weight_long)
+            .mark_line(point=True)
+            .encode(
                 x=alt.X("date:T", title="Date"),
-                tooltip=["date:T", "weight:Q", "reps:Q", "setNumber:Q"],
+                y=alt.Y("weight:Q", title="Weight (kg)", scale=alt.Scale(zero=False)),
+                color=alt.Color("set:N", title="Set"),
+                tooltip=["date:T", "set:N", "weight:Q"],
             )
+            .properties(height=220)
+        )
+        st.altair_chart(weight_chart, use_container_width=True)
 
-            weight_chart = (
-                base.mark_line(point=True)
-                .encode(y=alt.Y("weight:Q", title="Weight (kg)", scale=alt.Scale(zero=False)))
-                .properties(height=220)
+        reps_by_set = (
+            ex_df.pivot_table(index="date", columns="setNumber", values="reps", aggfunc="max")
+            .rename(columns={1: "Set 1", 2: "Set 2", 3: "Set 3"})
+            .reset_index()
+        )
+        reps_long = reps_by_set.melt("date", var_name="set", value_name="reps").dropna()
+        reps_chart = (
+            alt.Chart(reps_long)
+            .mark_line(point=True)
+            .encode(
+                x=alt.X("date:T", title="Date"),
+                y=alt.Y("reps:Q", title="Reps", scale=alt.Scale(zero=False)),
+                color=alt.Color("set:N", title="Set"),
+                tooltip=["date:T", "set:N", "reps:Q"],
             )
-            reps_chart = (
-                base.mark_line(point=True)
-                .encode(y=alt.Y("reps:Q", title="Reps", scale=alt.Scale(zero=False)))
-                .properties(height=220)
-            )
-            st.altair_chart(weight_chart, use_container_width=True)
-            st.altair_chart(reps_chart, use_container_width=True)
+            .properties(height=220)
+        )
+        st.altair_chart(reps_chart, use_container_width=True)
 
-            st.markdown("**1RM Estimate Over Time (First Set)**")
-            first_set = first_set_all[first_set_all["exercise"] == exercise]
-            if first_set.empty:
-                st.caption("No first-set data for 1RM estimates.")
-            else:
-                ci_band = (
-                    alt.Chart(first_set)
-                    .mark_area(opacity=0.2)
-                    .encode(
-                        x=alt.X("date:T", title="Date"),
-                        y=alt.Y("ci_low:Q", title="1RM (kg)", scale=alt.Scale(zero=False)),
-                        y2="ci_high:Q",
-                    )
-                    .properties(height=220)
-                )
-                est_line = (
-                    alt.Chart(first_set)
-                    .mark_line(point=True)
-                    .encode(
-                        x=alt.X("date:T", title="Date"),
-                        y=alt.Y("estimate:Q", title="1RM (kg)", scale=alt.Scale(zero=False)),
-                        tooltip=["date:T", "estimate:Q", "ci_low:Q", "ci_high:Q"],
-                    )
-                    .properties(height=220)
-                )
-                st.altair_chart(ci_band + est_line, use_container_width=True)
+        e1rm = e1rm_series(df, selected_exercise)
+        e1rm_by_date = e1rm.groupby("date", as_index=False)["estimate"].max()
+        sets = (
+            ex_df.pivot_table(index="date", columns="setNumber", values="reps", aggfunc="max")
+            .rename(columns={1: "reps_set1", 2: "reps_set2", 3: "reps_set3"})
+            .reset_index()
+        )
+        weights = ex_df.groupby("date", as_index=False)["weight"].max().rename(columns={"weight": "weight"})
+        volume = ex_df.groupby("date", as_index=False).apply(
+            lambda frame: float((frame["weight"] * frame["reps"]).sum())
+        ).rename(columns={0: "volume"})
+        table = weights.merge(sets, on="date", how="left").merge(e1rm_by_date, on="date", how="left").merge(
+            volume, on="date", how="left"
+        )
+        table = table.sort_values("date", ascending=True)
+        table["pr"] = table["estimate"].cummax() == table["estimate"]
+        table["pr"] = table["pr"].map(lambda val: "PR" if val else "")
+        table = table.sort_values("date", ascending=False)
+        st.dataframe(table, use_container_width=True)
 
-            st.dataframe(
-                ex_df[["date", "weight", "reps", "setNumber"]],
-                use_container_width=True,
-            )
-else:
-    st.info("No exercises available for per-exercise tabs.")
+
+tabs = st.tabs(exercises)
+for tab, exercise in zip(tabs, exercises):
+    with tab:
+        render_exercise_view(exercise)

@@ -397,3 +397,190 @@ def latest_1rm_table(df: pd.DataFrame) -> pd.DataFrame:
         .rename(columns={"estimate": "latest_1rm"})
     )
     return latest[["exercise", "latest_1rm", "date"]].sort_values("exercise")
+
+
+def latest_session(df: pd.DataFrame, exercise: str) -> pd.DataFrame:
+    ex_df = df[(df["type"] == "workout") & (df["exercise"] == exercise)].copy()
+    if ex_df.empty:
+        return pd.DataFrame()
+    latest_date = ex_df["date"].max()
+    return ex_df[ex_df["date"] == latest_date].copy()
+
+
+def session_summary(session: pd.DataFrame) -> dict:
+    if session.empty:
+        return {
+            "date": None,
+            "volume": 0.0,
+            "weight_pr": 0.0,
+            "sets": [],
+        }
+    date = session["date"].max()
+    volume = float((session["weight"] * session["reps"]).sum())
+    weight_pr = float(session["weight"].max())
+    sets = []
+    for set_num in (1, 2, 3):
+        row = session[session["setNumber"] == set_num]
+        if row.empty:
+            sets.append({"set": set_num, "weight": None, "reps": None})
+        else:
+            sets.append(
+                {
+                    "set": set_num,
+                    "weight": float(row.iloc[0]["weight"]),
+                    "reps": int(row.iloc[0]["reps"]),
+                }
+            )
+    return {"date": date, "volume": volume, "weight_pr": weight_pr, "sets": sets}
+
+
+def e1rm_series(df: pd.DataFrame, exercise: str) -> pd.DataFrame:
+    first_set = first_set_1rm(df)
+    if first_set.empty:
+        return pd.DataFrame()
+    series = first_set[first_set["exercise"] == exercise].copy()
+    return series.sort_values("timestamp")
+
+
+def e1rm_latest_delta(series: pd.DataFrame, baseline_series: pd.DataFrame | None = None) -> dict:
+    if series.empty:
+        return {"current": None, "ci_low": None, "ci_high": None, "delta_pct": None, "delta_abs": None}
+    current = series.iloc[-1]
+    if baseline_series is None:
+        baseline_series = series
+    baseline = baseline_series.iloc[0] if not baseline_series.empty else None
+    delta_pct = None
+    delta_abs = None
+    if baseline is not None and float(baseline["estimate"]) != 0:
+        delta_abs = float(current["estimate"]) - float(baseline["estimate"])
+        delta_pct = (float(current["estimate"]) - float(baseline["estimate"])) / float(baseline["estimate"]) * 100
+    return {
+        "current": float(current["estimate"]),
+        "ci_low": float(current["ci_low"]),
+        "ci_high": float(current["ci_high"]),
+        "delta_pct": delta_pct,
+        "delta_abs": delta_abs,
+        "date": current["date"],
+    }
+
+
+def e1rm_formula_for_exercise(exercise: str) -> tuple[str, str]:
+    name = exercise.lower()
+    if "deadlift" in name:
+        return ("Epley (scaled)", "Estimate = 1.04 x weight x (1 + reps/30)")
+    if "squat" in name:
+        return ("Lombardi", "Estimate = weight x reps^0.10")
+    if "bench" in name:
+        return ("Lombardi", "Estimate = weight x reps^0.10")
+    if "overhead" in name or "press" in name:
+        return ("Epley (scaled)", "Estimate = 1.04 x weight x (1 + reps/30)")
+    if "row" in name:
+        return ("Lombardi (scaled)", "Estimate = 0.93 x weight x reps^0.10")
+    if "pull up" in name or "pull-up" in name:
+        return ("Epley", "Estimate = weight x (1 + reps/30)")
+    return ("Epley", "Estimate = weight x (1 + reps/30)")
+
+
+def e1rm_pr_flags(series: pd.DataFrame) -> pd.DataFrame:
+    if series.empty:
+        return series
+    series = series.copy()
+    series["pr"] = series["estimate"].cummax() == series["estimate"]
+    return series
+
+
+def muscle_group_for_exercise(exercise: str) -> str:
+    name = exercise.lower()
+    if "bench" in name or "chest" in name:
+        return "Chest"
+    if "squat" in name or "quad" in name:
+        return "Quads"
+    if "deadlift" in name or "hamstring" in name:
+        return "Hamstrings"
+    if "overhead" in name or "press" in name:
+        return "Shoulders"
+    if "row" in name or "pull" in name or "lat" in name:
+        return "Back"
+    if "curl" in name:
+        return "Biceps"
+    if "tricep" in name or "extension" in name:
+        return "Triceps"
+    return "Other"
+
+
+def weekly_sets_by_muscle(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame(columns=["muscle", "sets"])
+    df = df.copy()
+    df["muscle"] = df["exercise"].apply(muscle_group_for_exercise)
+    return df.groupby("muscle", as_index=False).size().rename(columns={"size": "sets"})
+
+
+def weekly_sessions_by_muscle(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame(columns=["muscle", "sessions"])
+    df = df.copy()
+    df["muscle"] = df["exercise"].apply(muscle_group_for_exercise)
+    sessions = df.groupby(["muscle", "date"], as_index=False).size()
+    return sessions.groupby("muscle", as_index=False).size().rename(columns={"size": "sessions"})
+
+
+def weekly_e1rm_prs(df: pd.DataFrame, start_str: str, end_str: str) -> list[str]:
+    if df.empty:
+        return []
+    first_set = first_set_1rm(df)
+    if first_set.empty:
+        return []
+    first_set = first_set.sort_values("date")
+    all_time = first_set.groupby("exercise", as_index=False)["estimate"].max()
+    week = first_set[(first_set["date"] >= start_str) & (first_set["date"] <= end_str)]
+    if week.empty:
+        return []
+    week_max = week.groupby("exercise", as_index=False)["estimate"].max()
+    merged = week_max.merge(all_time, on="exercise", suffixes=("_week", "_all"))
+    return merged[merged["estimate_week"] >= merged["estimate_all"]]["exercise"].tolist()
+
+
+def exercise_status_by_week(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame(columns=["exercise", "status"])
+    first_set = first_set_1rm(df)
+    if first_set.empty:
+        return pd.DataFrame(columns=["exercise", "status"])
+    first_set = first_set.copy()
+    first_set["week_start"] = first_set["timestamp"].dt.to_period("W").apply(lambda p: p.start_time.date())
+    weekly = first_set.groupby(["exercise", "week_start"], as_index=False)["estimate"].max()
+    statuses = []
+    for exercise, group in weekly.groupby("exercise"):
+        group = group.sort_values("week_start")
+        if len(group) < 2:
+            statuses.append({"exercise": exercise, "status": "Yellow"})
+            continue
+        latest = group.iloc[-1]["estimate"]
+        prev = group.iloc[-2]["estimate"]
+        if latest > prev:
+            status = "Green"
+        elif latest < prev:
+            status = "Red"
+        else:
+            status = "Yellow"
+        statuses.append({"exercise": exercise, "status": status})
+    return pd.DataFrame(statuses)
+
+
+def rep_shortfall_percent(df: pd.DataFrame) -> float:
+    if df.empty:
+        return 0.0
+    shortfalls = []
+    for exercise, ex_df in df.groupby("exercise"):
+        cap = rep_cap_for_exercise(exercise)
+        sets = ex_df[ex_df["setNumber"].isin([1, 2])]
+        if sets.empty:
+            continue
+        target = cap * len(sets)
+        actual = int(sets["reps"].clip(upper=cap).sum())
+        if target > 0:
+            shortfalls.append((target - actual) / target)
+    if not shortfalls:
+        return 0.0
+    return float(sum(shortfalls) / len(shortfalls) * 100)
