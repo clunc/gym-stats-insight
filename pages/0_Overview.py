@@ -112,6 +112,20 @@ else:
         on="date",
         how="left",
     ).fillna({"sessions": 0})
+    workouts_with_week = workouts.copy()
+    workouts_with_week["week_start"] = workouts_with_week["timestamp"].dt.to_period("W-SUN").apply(
+        lambda period: period.start_time
+    )
+    weekly_sessions = (
+        workouts_with_week.groupby("week_start")["date"]
+        .nunique()
+        .rename("sessions_per_week")
+        .reset_index()
+    )
+    weekly_sessions["is_streak"] = weekly_sessions["sessions_per_week"] >= 2
+    calendar["week_start"] = calendar["date"].dt.to_period("W-SUN").apply(lambda period: period.start_time)
+    calendar = calendar.merge(weekly_sessions[["week_start", "is_streak"]], on="week_start", how="left")
+    calendar["is_streak"] = calendar["is_streak"].fillna(False)
     calendar["weekday_idx"] = calendar["date"].dt.isocalendar().day.astype(int)
     calendar["month"] = calendar["date"].dt.to_period("M").dt.to_timestamp()
     calendar["month_start"] = calendar["month"]
@@ -141,6 +155,8 @@ else:
                     "day": "",
                     "is_header": True,
                     "day_label": label,
+                    "is_streak": False,
+                    "week_start": month,
                 }
             )
     header_df = pd.DataFrame(header_rows)
@@ -167,12 +183,21 @@ else:
     header_rect = base.transform_filter("datum.is_header === true").mark_rect().encode(
         color=alt.value("transparent")
     )
+    week_rect = base.transform_filter("datum.is_header === false").mark_rect().encode(
+        color=alt.condition(
+            alt.datum.is_streak,
+            alt.value("#C8E6C9"),
+            alt.value("#FFCDD2"),
+        ),
+        opacity=alt.value(1),
+    )
     day_rect = base.transform_filter("datum.is_header === false").mark_rect().encode(
         color=alt.condition(
             alt.datum.sessions > 0,
             alt.value("#2e7d32"),
-            alt.value("#e5e7eb"),
-        )
+            alt.value("transparent"),
+        ),
+        opacity=alt.value(1),
     )
     labels = base.mark_text(fontSize=9, dy=1).encode(
         text="day_label:N",
@@ -182,7 +207,7 @@ else:
             alt.value("#111827"),
         ),
     )
-    layered = alt.layer(header_rect, day_rect, labels).facet(
+    layered = alt.layer(header_rect, week_rect, day_rect, labels).facet(
         column=alt.Column(
             "month:T",
             title=None,
