@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -90,3 +91,77 @@ if sick.empty:
 else:
     sick_dates = sick["date"].drop_duplicates().sort_values().tolist()
     st.write(", ".join(sick_dates))
+
+st.subheader("Workout Calendar")
+daily_sessions = (
+    workouts.groupby("date", as_index=False)
+    .size()
+    .rename(columns={"size": "sessions"})
+)
+if daily_sessions.empty:
+    st.caption("No workouts to show in the selected time range.")
+else:
+    date_index = pd.date_range(
+        start=pd.to_datetime(daily_sessions["date"]).min(),
+        end=pd.to_datetime(daily_sessions["date"]).max(),
+        freq="D",
+    )
+    calendar = pd.DataFrame({"date": date_index})
+    calendar = calendar.merge(
+        daily_sessions.assign(date=pd.to_datetime(daily_sessions["date"])),
+        on="date",
+        how="left",
+    ).fillna({"sessions": 0})
+    calendar["weekday_idx"] = calendar["date"].dt.dayofweek
+    calendar["month"] = calendar["date"].dt.to_period("M").dt.to_timestamp()
+    calendar["month_start"] = calendar["month"]
+    calendar["month_start_weekday"] = calendar["month_start"].dt.dayofweek
+    calendar["day_of_month"] = calendar["date"].dt.day
+    calendar["week_of_month"] = (
+        (calendar["day_of_month"] - 1 + calendar["month_start_weekday"]) // 7
+    ).astype(int)
+    calendar["day"] = calendar["date"].dt.day.astype(str)
+
+    base = alt.Chart(calendar).encode(
+        x=alt.X(
+            "weekday_idx:O",
+            title=None,
+            scale=alt.Scale(domain=list(range(7))),
+            axis=alt.Axis(
+                orient="top",
+                labelAngle=0,
+                labelPadding=4,
+                values=list(range(7)),
+                labelExpr="['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][datum.value]",
+                labelOverlap=False,
+                ticks=False,
+            ),
+        ),
+        y=alt.Y(
+            "week_of_month:O",
+            title=None,
+            axis=alt.Axis(labelOpacity=0),
+        ),
+        tooltip=[
+            alt.Tooltip("date:T", title="Date"),
+            alt.Tooltip("sessions:Q", title="Sessions"),
+        ],
+    ).properties(height=140)
+
+    rect = base.mark_rect().encode(
+        color=alt.condition(
+            alt.datum.sessions > 0,
+            alt.value("#2e7d32"),
+            alt.value("#e5e7eb"),
+        )
+    )
+    labels = base.mark_text(fontSize=9, dy=1, color="#111827").encode(text="day:N")
+    layered = alt.layer(rect, labels).facet(
+        column=alt.Column(
+            "month:T",
+            title=None,
+            header=alt.Header(format="%b %Y", labelAngle=0, labelOrient="top"),
+        ),
+        columns=3,
+    )
+    st.altair_chart(layered, use_container_width=True)
