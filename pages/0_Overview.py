@@ -24,6 +24,7 @@ if not data:
 _, template, df = data
 
 workouts = df[df["type"] == "workout"]
+all_workouts = workouts.copy()
 if workouts.empty:
     st.info("No workout data available.")
     st.stop()
@@ -112,7 +113,12 @@ else:
         on="date",
         how="left",
     ).fillna({"sessions": 0})
-    workouts_with_week = workouts.copy()
+    streak_source = workouts
+    if time_range == "YTD" and cutoff is not None:
+        week_start_cutoff = cutoff.to_period("W-SUN").start_time.date()
+        streak_source = all_workouts[all_workouts["timestamp"].dt.date >= week_start_cutoff]
+
+    workouts_with_week = streak_source.copy()
     workouts_with_week["week_start"] = workouts_with_week["timestamp"].dt.to_period("W-SUN").apply(
         lambda period: period.start_time
     )
