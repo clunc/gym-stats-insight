@@ -12,8 +12,10 @@ from app_utils import (
     e1rm_pr_flags,
     e1rm_series,
     exercise_snapshot,
+    lower_rep_cap_for_exercise,
     load_app_data,
     progress_to_next_increase,
+    rep_cap_for_exercise,
 )
 
 st.title("Per-Exercise View")
@@ -152,18 +154,34 @@ def render_exercise_view(selected_exercise: str) -> None:
             .reset_index()
         )
         weight_long = weight_by_set.melt("date", var_name="set", value_name="weight").dropna()
+        set_hover = alt.selection_point(
+            fields=["set"],
+            bind="legend",
+            on="mouseover",
+            clear="mouseout",
+        )
         weight_chart = (
             alt.Chart(weight_long)
             .mark_line(point=True)
             .encode(
                 x=alt.X("date:T", title="Date"),
                 y=alt.Y("weight:Q", title="Weight (kg)", scale=alt.Scale(zero=False)),
-                color=alt.Color("set:N", title="Set"),
+                color=alt.Color(
+                    "set:N",
+                    title="Set",
+                    legend=alt.Legend(
+                        title="Set",
+                        orient="bottom",
+                        direction="horizontal",
+                        symbolSize=120,
+                    ),
+                ),
+                opacity=alt.condition(set_hover, alt.value(1.0), alt.value(0.05)),
                 tooltip=["date:T", "set:N", "weight:Q"],
             )
-            .properties(height=220)
+            .add_params(set_hover)
+            .properties(height=200)
         )
-        st.altair_chart(weight_chart, use_container_width=True)
 
         reps_by_set = (
             ex_df.pivot_table(index="date", columns="setNumber", values="reps", aggfunc="max")
@@ -171,18 +189,77 @@ def render_exercise_view(selected_exercise: str) -> None:
             .reset_index()
         )
         reps_long = reps_by_set.melt("date", var_name="set", value_name="reps").dropna()
+        upper_cap = rep_cap_for_exercise(selected_exercise)
+        lower_cap = lower_rep_cap_for_exercise(selected_exercise)
+        data_min = int(reps_long["reps"].min()) if not reps_long.empty else lower_cap
+        data_max = int(reps_long["reps"].max()) if not reps_long.empty else upper_cap
+        data_pad = 2
+        base_min = data_min - data_pad
+        base_max = data_max + data_pad
+        mid = (lower_cap + upper_cap) / 2
+        half_span = max(mid - base_min, base_max - mid, (upper_cap - lower_cap) / 2)
+        y_min = mid - half_span
+        y_max = mid + half_span
+        y_scale = alt.Scale(domain=[y_min, y_max])
+        reps_long = reps_long.copy()
+        reps_long["cap_status"] = "below"
+        reps_long.loc[reps_long["reps"] == upper_cap, "cap_status"] = "at"
+        reps_long.loc[reps_long["reps"] > upper_cap, "cap_status"] = "above"
+
+        rep_zones = pd.DataFrame(
+            [
+                {"zone": "Below", "y0": y_min, "y1": lower_cap, "color": "#fca5a5"},
+                {"zone": "Between", "y0": lower_cap, "y1": upper_cap, "color": "#fef9c3"},
+                {"zone": "Above", "y0": upper_cap, "y1": y_max, "color": "#dcfce7"},
+            ]
+        )
+        zones = (
+            alt.Chart(rep_zones)
+            .mark_rect(opacity=0.2)
+            .encode(
+                y=alt.Y("y0:Q", scale=y_scale),
+                y2="y1:Q",
+                color=alt.Color("color:N", scale=None, legend=None),
+            )
+        )
+
+        upper_rule = (
+            alt.Chart(pd.DataFrame({"y": [upper_cap]}))
+            .mark_rule(color="#16a34a", strokeDash=[6, 4])
+            .encode(y=alt.Y("y:Q", scale=y_scale))
+        )
+        lower_rule = (
+            alt.Chart(pd.DataFrame({"y": [lower_cap]}))
+            .mark_rule(color="#ef4444", strokeDash=[6, 4])
+            .encode(y=alt.Y("y:Q", scale=y_scale))
+        )
+
         reps_chart = (
             alt.Chart(reps_long)
             .mark_line(point=True)
             .encode(
                 x=alt.X("date:T", title="Date"),
-                y=alt.Y("reps:Q", title="Reps", scale=alt.Scale(zero=False)),
-                color=alt.Color("set:N", title="Set"),
+                y=alt.Y(
+                    "reps:Q",
+                    title="Reps",
+                    scale=y_scale,
+                    axis=alt.Axis(gridOpacity=0.2),
+                ),
+                color=alt.Color("set:N", title="Set", legend=None),
+                opacity=alt.condition(set_hover, alt.value(1.0), alt.value(0.05)),
                 tooltip=["date:T", "set:N", "reps:Q"],
             )
-            .properties(height=220)
+            .properties(height=200)
         )
-        st.altair_chart(reps_chart, use_container_width=True)
+
+        combined = alt.vconcat(
+            weight_chart,
+            zones + reps_chart + upper_rule + lower_rule,
+        ).resolve_scale(x="shared").resolve_legend(color="shared")
+        left_spacer, chart_col, right_spacer = st.columns([1, 8, 1])
+        with chart_col:
+            st.altair_chart(combined, use_container_width=True)
+        st.caption("Green line: upper cap | Orange line: lower cap")
 
         e1rm = e1rm_series(df, selected_exercise)
         e1rm_by_date = e1rm.groupby("date", as_index=False)["estimate"].max()

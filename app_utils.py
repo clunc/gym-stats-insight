@@ -163,6 +163,13 @@ def rep_cap_for_exercise(exercise: str) -> int:
     return 10
 
 
+def lower_rep_cap_for_exercise(exercise: str) -> int:
+    name = exercise.lower()
+    if "deadlift" in name or "squat" in name or "pull up" in name or "pull-up" in name:
+        return 4
+    return 6
+
+
 def round_weight(value: float, step: float = 0.5) -> float:
     if step <= 0:
         return value
