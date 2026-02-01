@@ -112,30 +112,46 @@ else:
         on="date",
         how="left",
     ).fillna({"sessions": 0})
-    calendar["weekday_idx"] = calendar["date"].dt.dayofweek
+    calendar["weekday_idx"] = calendar["date"].dt.isocalendar().day.astype(int)
     calendar["month"] = calendar["date"].dt.to_period("M").dt.to_timestamp()
     calendar["month_start"] = calendar["month"]
-    calendar["month_start_weekday"] = calendar["month_start"].dt.dayofweek
+    calendar["month_start_weekday"] = calendar["month_start"].dt.isocalendar().day.astype(int) - 1
     calendar["day_of_month"] = calendar["date"].dt.day
     calendar["week_of_month"] = (
         (calendar["day_of_month"] - 1 + calendar["month_start_weekday"]) // 7
     ).astype(int)
     calendar["day"] = calendar["date"].dt.day.astype(str)
+    calendar["is_header"] = False
+    calendar["day_label"] = calendar["day"]
 
-    base = alt.Chart(calendar).encode(
+    weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    header_rows = []
+    for month in sorted(calendar["month"].unique()):
+        for idx, label in enumerate(weekdays, start=1):
+            header_rows.append(
+                {
+                    "date": month,
+                    "sessions": 0,
+                    "weekday_idx": idx,
+                    "month": month,
+                    "month_start": month,
+                    "month_start_weekday": None,
+                    "day_of_month": None,
+                    "week_of_month": -1,
+                    "day": "",
+                    "is_header": True,
+                    "day_label": label,
+                }
+            )
+    header_df = pd.DataFrame(header_rows)
+    calendar_with_header = pd.concat([calendar, header_df], ignore_index=True)
+
+    base = alt.Chart(calendar_with_header).encode(
         x=alt.X(
             "weekday_idx:O",
             title=None,
-            scale=alt.Scale(domain=list(range(7))),
-            axis=alt.Axis(
-                orient="top",
-                labelAngle=0,
-                labelPadding=4,
-                values=list(range(7)),
-                labelExpr="['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][datum.value]",
-                labelOverlap=False,
-                ticks=False,
-            ),
+            scale=alt.Scale(domain=list(range(1, 8))),
+            axis=alt.Axis(labelOpacity=0, ticks=False),
         ),
         y=alt.Y(
             "week_of_month:O",
@@ -148,15 +164,25 @@ else:
         ],
     ).properties(height=140)
 
-    rect = base.mark_rect().encode(
+    header_rect = base.transform_filter("datum.is_header === true").mark_rect().encode(
+        color=alt.value("transparent")
+    )
+    day_rect = base.transform_filter("datum.is_header === false").mark_rect().encode(
         color=alt.condition(
             alt.datum.sessions > 0,
             alt.value("#2e7d32"),
             alt.value("#e5e7eb"),
         )
     )
-    labels = base.mark_text(fontSize=9, dy=1, color="#111827").encode(text="day:N")
-    layered = alt.layer(rect, labels).facet(
+    labels = base.mark_text(fontSize=9, dy=1).encode(
+        text="day_label:N",
+        color=alt.condition(
+            alt.datum.is_header,
+            alt.value("#ffffff"),
+            alt.value("#111827"),
+        ),
+    )
+    layered = alt.layer(header_rect, day_rect, labels).facet(
         column=alt.Column(
             "month:T",
             title=None,
