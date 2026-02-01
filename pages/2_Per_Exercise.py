@@ -32,7 +32,7 @@ if not exercises:
 def render_exercise_view(selected_exercise: str) -> None:
     time_range = st.radio(
         "Time Range",
-        ("1W", "1M", "3M", "6M", "YTD", "1Y", "All"),
+        ("All", "1Y", "YTD", "6M", "3M", "1M", "1W"),
         horizontal=True,
         key=f"time_range_{selected_exercise}",
     )
