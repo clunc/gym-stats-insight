@@ -93,9 +93,9 @@ def render_exercise_view(selected_exercise: str) -> None:
                     f"{progress['next_weight']:.1f} kg (+{progress['increase_pct']:.0f}%)"
                 )
 
-    st.subheader("Current E1RM")
+    st.subheader("Current 1ERM")
     if latest["current"] is None:
-        st.caption("No 1RM estimates available.")
+        st.caption("No 1ERM estimates available.")
     else:
         delta = latest["delta_pct"]
         delta_abs = latest["delta_abs"]
@@ -104,20 +104,20 @@ def render_exercise_view(selected_exercise: str) -> None:
         else:
             delta_label = f"{delta_abs:+.1f} kg ({delta:+.1f}%)"
         st.metric(
-            "E1RM (with CI)",
+            "1ERM (with CI)",
             f"{latest['current']:.1f} kg ± {abs(latest['current'] - latest['ci_low']):.1f} kg",
             delta_label,
         )
         formula_name, formula = e1rm_formula_for_exercise(selected_exercise)
         st.caption(f"Formula (first set, {formula_name}): {formula}")
 
-    st.subheader("E1RM Progression")
+    st.subheader("1ERM Progression")
     ci_band = (
         alt.Chart(series)
         .mark_area(opacity=0.2)
         .encode(
             x=alt.X("date:T", title="Date"),
-            y=alt.Y("ci_low:Q", title="1RM (kg)", scale=alt.Scale(zero=False)),
+            y=alt.Y("ci_low:Q", title="1ERM (kg)", scale=alt.Scale(zero=False)),
             y2="ci_high:Q",
         )
         .properties(height=240)
@@ -127,7 +127,7 @@ def render_exercise_view(selected_exercise: str) -> None:
         .mark_line(point=True)
         .encode(
             x=alt.X("date:T", title="Date"),
-            y=alt.Y("estimate:Q", title="1RM (kg)", scale=alt.Scale(zero=False)),
+            y=alt.Y("estimate:Q", title="1ERM (kg)", scale=alt.Scale(zero=False)),
             tooltip=["date:T", "estimate:Q", "ci_low:Q", "ci_high:Q"],
         )
         .properties(height=240)

@@ -11,7 +11,9 @@ from app_utils import (
     compute_summary,
     load_app_data,
     latest_1rm_table,
+    progress_to_next_increase,
     progression_event_summary,
+    stagnation_flag_in_period,
     workout_date_bounds,
 )
 
@@ -203,12 +205,57 @@ col2.metric("Total Sets", summary["total_sets"])
 col3.metric("Total Reps", summary["total_reps"])
 col4.metric("Total Volume", f"{summary['total_volume']:.0f} kg")
 
-st.subheader("Current 1RM per Exercise")
+st.subheader("Progress Snapshot")
+exercise_names = sorted(full_df[full_df["type"] == "workout"]["exercise"].unique())
+ready_exercises = []
+plateaued_exercises = []
+in_progress_exercises = []
+
+if exercise_names:
+    latest_date = full_df[full_df["type"] == "workout"]["date"].max()
+    if latest_date is None:
+        latest_date = "—"
+    end_date = latest_date
+    start_date = pd.to_datetime(latest_date) - pd.DateOffset(days=90) if latest_date != "—" else None
+
+    for exercise in exercise_names:
+        ex_df = full_df[(full_df["type"] == "workout") & (full_df["exercise"] == exercise)]
+        progress = progress_to_next_increase(full_df, exercise)
+        if progress["ready"]:
+            ready_exercises.append(exercise)
+            continue
+        if start_date is not None:
+            plateaued = stagnation_flag_in_period(
+                ex_df, progress["cap"], start_date.date().isoformat(), end_date
+            )
+        else:
+            plateaued = False
+        if plateaued:
+            plateaued_exercises.append(exercise)
+        else:
+            in_progress_exercises.append(exercise)
+
+ready_count = len(ready_exercises)
+plateaued_count = len(plateaued_exercises)
+in_progress_count = len(in_progress_exercises)
+col1, col2, col3 = st.columns(3)
+col1.metric("Ready to Progress", ready_count)
+col2.metric("Plateaued", plateaued_count)
+col3.metric("In Progress", in_progress_count)
+
+if ready_exercises:
+    with st.expander("Ready exercises"):
+        st.success("Ready: " + ", ".join(ready_exercises))
+
+st.subheader("Current 1ERM per Exercise")
 latest_1rm = latest_1rm_table(df)
 if latest_1rm.empty:
-    st.caption("No 1RM estimates available.")
+    st.caption("No 1ERM estimates available.")
 else:
-    st.dataframe(latest_1rm, use_container_width=True)
+    st.dataframe(
+        latest_1rm.rename(columns={"latest_1rm": "latest_1erm"}),
+        use_container_width=True,
+    )
 
 st.subheader("Progression Events (All Time)")
 exercises = sorted(df[df["type"] == "workout"]["exercise"].unique())
