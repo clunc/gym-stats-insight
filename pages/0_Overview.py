@@ -14,6 +14,8 @@ from app_utils import (
     progress_to_next_increase,
     progression_event_summary,
     stagnation_flag_in_period,
+    volume_trend,
+    weekly_volume_metrics,
     workout_date_bounds,
 )
 
@@ -204,6 +206,32 @@ col1.metric("Total Sessions", summary["total_sessions"])
 col2.metric("Total Sets", summary["total_sets"])
 col3.metric("Total Reps", summary["total_reps"])
 col4.metric("Total Volume", f"{summary['total_volume']:.0f} kg")
+
+st.subheader("Volume Trends")
+volume_df = volume_trend(df, "W")
+metrics = weekly_volume_metrics(df)
+
+if volume_df.empty:
+    st.caption("No volume data for the selected time range.")
+else:
+    chart = (
+        alt.Chart(volume_df)
+        .mark_line(point=True)
+        .encode(
+            x=alt.X("date:T", title="Week Starting"),
+            y=alt.Y("volume:Q", title="Total Volume (kg)"),
+            tooltip=["date:T", "volume:Q"],
+        )
+        .properties(height=220)
+    )
+    st.altair_chart(chart, use_container_width=True)
+    avg_4w = metrics["avg_4w"]
+    if avg_4w and avg_4w > 0:
+        delta_pct = (metrics["this_week"] - avg_4w) / avg_4w * 100
+        if delta_pct > 10:
+            st.warning(
+                f"\u26a0\ufe0f Weekly volume is {delta_pct:.0f}% above your 4-week average \u2014 monitor recovery."
+            )
 
 st.subheader("Progress Snapshot")
 exercise_names = sorted(full_df[full_df["type"] == "workout"]["exercise"].unique())

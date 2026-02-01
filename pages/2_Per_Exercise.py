@@ -16,6 +16,8 @@ from app_utils import (
     load_app_data,
     progress_to_next_increase,
     rep_cap_for_exercise,
+    volume_trend,
+    weekly_volume_metrics,
 )
 
 st.title("Per-Exercise View")
@@ -141,10 +143,29 @@ def render_exercise_view(selected_exercise: str) -> None:
     )
     st.altair_chart(ci_band + est_line + pr_points, use_container_width=True)
 
-    st.subheader("Session History")
     ex_df = df[(df["type"] == "workout") & (df["exercise"] == selected_exercise)].copy()
     if cutoff is not None:
         ex_df = ex_df[ex_df["timestamp"] >= cutoff]
+
+    st.subheader("Volume Trends")
+    volume_df = volume_trend(ex_df, "W")
+
+    if volume_df.empty:
+        st.caption("No volume data for the selected time range.")
+    else:
+        chart = (
+            alt.Chart(volume_df)
+            .mark_line(point=True)
+            .encode(
+                x=alt.X("date:T", title="Week Starting"),
+                y=alt.Y("volume:Q", title="Volume (kg)"),
+                tooltip=["date:T", "volume:Q"],
+            )
+            .properties(height=220)
+        )
+        st.altair_chart(chart, use_container_width=True)
+
+    st.subheader("Session History")
     if ex_df.empty:
         st.caption("No session history.")
     else:

@@ -156,6 +156,42 @@ def weekly_volume_context(ex_df: pd.DataFrame) -> dict:
     return {"weekly_volume": weekly_volume, "rolling_avg": rolling_avg, "trend": trend}
 
 
+def volume_trend(df: pd.DataFrame, freq: str) -> pd.DataFrame:
+    workouts = df[df["type"] == "workout"].copy()
+    if workouts.empty:
+        return pd.DataFrame(columns=["date", "volume"])
+    workouts["volume"] = workouts["weight"] * workouts["reps"]
+    if freq == "D":
+        daily = workouts.groupby("date", as_index=False)["volume"].sum().sort_values("date")
+        daily["date"] = pd.to_datetime(daily["date"], errors="coerce")
+        return daily.reset_index(drop=True)
+    if freq == "W":
+        workouts["week_start"] = workouts["timestamp"].dt.to_period("W-SUN").apply(lambda p: p.start_time)
+        weekly = (
+            workouts.groupby("week_start", as_index=False)["volume"].sum().sort_values("week_start")
+        )
+        weekly = weekly.rename(columns={"week_start": "date"})
+        return weekly.reset_index(drop=True)
+    raise ValueError("freq must be 'D' or 'W'")
+
+
+def weekly_volume_metrics(df: pd.DataFrame) -> dict:
+    workouts = df[df["type"] == "workout"].copy()
+    if workouts.empty:
+        return {"this_week": 0.0, "last_week": 0.0, "pct_change": None, "avg_4w": None}
+    workouts["volume"] = workouts["weight"] * workouts["reps"]
+    workouts["week_start"] = workouts["timestamp"].dt.to_period("W-SUN").apply(lambda p: p.start_time)
+    weekly = workouts.groupby("week_start", as_index=False)["volume"].sum()
+    latest_week = weekly["week_start"].max()
+    this_week = float(weekly.loc[weekly["week_start"] == latest_week, "volume"].sum())
+    last_week_start = latest_week - pd.Timedelta(days=7)
+    last_week = float(weekly.loc[weekly["week_start"] == last_week_start, "volume"].sum())
+    pct_change = None if last_week == 0 else (this_week - last_week) / last_week * 100
+    weekly_sorted = weekly.sort_values("week_start")
+    avg_4w = float(weekly_sorted["volume"].tail(4).mean()) if not weekly_sorted.empty else None
+    return {"this_week": this_week, "last_week": last_week, "pct_change": pct_change, "avg_4w": avg_4w}
+
+
 def rep_cap_for_exercise(exercise: str) -> int:
     name = exercise.lower()
     if "deadlift" in name or "squat" in name or "pull up" in name or "pull-up" in name:
