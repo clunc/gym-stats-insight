@@ -282,6 +282,78 @@ def render_exercise_view(selected_exercise: str) -> None:
             st.altair_chart(combined, use_container_width=True)
         st.caption("Green line: upper cap | Orange line: lower cap")
 
+        st.subheader("Fatigue & Recovery")
+        rep_sets = (
+            ex_df.pivot_table(index="date", columns="setNumber", values="reps", aggfunc="max")
+            .rename(columns={1: "set1", 2: "set2", 3: "set3"})
+            .reset_index()
+            .sort_values("date")
+        )
+        rep_sets["dropoff_pct"] = (
+            ((rep_sets["set1"] - rep_sets["set3"]) / rep_sets["set1"].where(rep_sets["set1"] > 0)) * 100
+        )
+        rep_sets["dropoff_pct"] = rep_sets["dropoff_pct"].clip(lower=0)
+        fatigue_score = rep_sets["dropoff_pct"].dropna().mean() if rep_sets["dropoff_pct"].notna().any() else None
+        latest_dropoff = (
+            rep_sets["dropoff_pct"].dropna().iloc[-1] if rep_sets["dropoff_pct"].notna().any() else None
+        )
+
+        session_dates = pd.to_datetime(
+            ex_df["date"].drop_duplicates().sort_values(),
+            errors="coerce",
+        )
+        day_gaps = session_dates.diff().dt.days.dropna()
+        rest_days = (day_gaps - 1).clip(lower=0)
+        avg_rest = float(rest_days.mean()) if not rest_days.empty else None
+        last_rest = int(rest_days.iloc[-1]) if not rest_days.empty else None
+
+        f_col1, f_col2, f_col3, f_col4 = st.columns(4)
+        f_col1.metric(
+            "Last Rep Drop-off",
+            "—" if latest_dropoff is None else f"{latest_dropoff:.1f}%",
+            help="Compares Set 3 to Set 1 in the latest session: ((Set 1 reps - Set 3 reps) / Set 1 reps) * 100.",
+        )
+        f_col2.metric(
+            "Avg Drop-off (Selected Range)",
+            "—" if fatigue_score is None else f"{fatigue_score:.1f}%",
+            help=(
+                "Compares Set 3 to Set 1 with the same formula as above: "
+                "((Set 1 reps - Set 3 reps) / Set 1 reps) * 100, then averages those session values "
+                "across the selected range."
+            ),
+        )
+        f_col3.metric(
+            "Last Recovery Gap",
+            "—" if last_rest is None else f"{last_rest} d",
+        )
+        f_col4.metric(
+            "Avg Rest Days",
+            "—" if avg_rest is None else f"{avg_rest:.1f} d",
+        )
+
+        set_pattern = pd.DataFrame(
+            {
+                "set": ["Set 1", "Set 2", "Set 3"],
+                "avg_reps": [
+                    rep_sets["set1"].mean(),
+                    rep_sets["set2"].mean(),
+                    rep_sets["set3"].mean(),
+                ],
+            }
+        ).dropna()
+        if not set_pattern.empty:
+            fatigue_pattern_chart = (
+                alt.Chart(set_pattern)
+                .mark_line(point=True)
+                .encode(
+                    x=alt.X("set:N", title="Set"),
+                    y=alt.Y("avg_reps:Q", title="Average Reps"),
+                    tooltip=["set:N", alt.Tooltip("avg_reps:Q", format=".2f")],
+                )
+                .properties(height=180)
+            )
+            st.altair_chart(fatigue_pattern_chart, use_container_width=True)
+
         e1rm = e1rm_series(df, selected_exercise)
         e1rm_by_date = e1rm.groupby("date", as_index=False)["estimate"].max()
         sets = (
