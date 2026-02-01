@@ -113,10 +113,12 @@ else:
         on="date",
         how="left",
     ).fillna({"sessions": 0})
-    streak_source = workouts
+    sick_dates = df[df["type"] == "sick"]["date"].drop_duplicates()
+    calendar["is_sick"] = calendar["date"].isin(pd.to_datetime(sick_dates))
+    streak_source = df[df["type"].isin(["workout", "sick"])]
     if time_range == "YTD" and cutoff is not None:
         week_start_cutoff = cutoff.to_period("W-SUN").start_time.date()
-        streak_source = all_workouts[all_workouts["timestamp"].dt.date >= week_start_cutoff]
+        streak_source = streak_source[streak_source["timestamp"].dt.date >= week_start_cutoff]
 
     workouts_with_week = streak_source.copy()
     workouts_with_week["week_start"] = workouts_with_week["timestamp"].dt.to_period("W-SUN").apply(
@@ -163,6 +165,7 @@ else:
                     "day_label": label,
                     "is_streak": False,
                     "week_start": month,
+                    "is_sick": False,
                 }
             )
     header_df = pd.DataFrame(header_rows)
@@ -197,12 +200,12 @@ else:
         ),
         opacity=alt.value(1),
     )
-    day_rect = base.transform_filter("datum.is_header === false").mark_rect().encode(
-        color=alt.condition(
-            alt.datum.sessions > 0,
-            alt.value("#2e7d32"),
-            alt.value("transparent"),
-        ),
+    sick_rect = base.transform_filter("datum.is_sick === true").mark_rect().encode(
+        color=alt.value("#d97706"),
+        opacity=alt.value(1),
+    )
+    day_rect = base.transform_filter("datum.sessions > 0").mark_rect().encode(
+        color=alt.value("#2e7d32"),
         opacity=alt.value(1),
     )
     labels = base.mark_text(fontSize=9, dy=1).encode(
@@ -213,7 +216,7 @@ else:
             alt.value("#111827"),
         ),
     )
-    layered = alt.layer(header_rect, week_rect, day_rect, labels).facet(
+    layered = alt.layer(header_rect, week_rect, sick_rect, day_rect, labels).facet(
         column=alt.Column(
             "month:T",
             title=None,
@@ -221,4 +224,6 @@ else:
         ),
         columns=3,
     )
-    st.altair_chart(layered, use_container_width=True)
+    spacer_left, chart_col, spacer_right = st.columns([1, 8, 1])
+    with chart_col:
+        st.altair_chart(layered, use_container_width=True)
