@@ -22,6 +22,7 @@ if not data:
     st.stop()
 
 _, template, df = data
+full_df = df.copy()
 
 workouts = df[df["type"] == "workout"]
 all_workouts = workouts.copy()
@@ -80,7 +81,7 @@ else:
     ).fillna({"sessions": 0})
     sick_dates = df[df["type"] == "sick"]["date"].drop_duplicates()
     calendar["is_sick"] = calendar["date"].isin(pd.to_datetime(sick_dates))
-    streak_source = df[df["type"].isin(["workout", "sick"])]
+    streak_source = full_df[full_df["type"].isin(["workout", "sick"])]
     if time_range == "YTD" and cutoff is not None:
         week_start_cutoff = cutoff.to_period("W-SUN").start_time.date()
         streak_source = streak_source[streak_source["timestamp"].dt.date >= week_start_cutoff]
