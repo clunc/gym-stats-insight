@@ -3,16 +3,43 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import urlopen
 
 import pandas as pd
 import streamlit as st
 
 DATA_PATH = Path("data/mock_history.json")
+ENV_PATH = Path(".env")
 
 
-@st.cache_data(show_spinner=False)
+def load_env_file(path: Path = ENV_PATH) -> None:
+    if not path.exists():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip("'").strip('"')
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
 def load_payload(path: Path) -> dict:
+    load_env_file()
+    url = os.getenv("GYM_HISTORY_URL", "").strip()
+    if url:
+        try:
+            with urlopen(url, timeout=10) as resp:
+                data = resp.read().decode("utf-8")
+                return json.loads(data)
+        except (HTTPError, URLError, json.JSONDecodeError):
+            # Fall back to local file if remote source is unavailable.
+            pass
     if not path.exists():
         return {}
     with path.open("r", encoding="utf-8") as handle:

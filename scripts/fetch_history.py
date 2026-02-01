@@ -5,18 +5,37 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections import defaultdict
 from datetime import datetime
+from pathlib import Path
 from urllib.request import urlopen
 from urllib.error import URLError, HTTPError
 
 DEFAULT_URL = "http://thinkcentre-janik.fritz.box/api/history"
+ENV_PATH = Path(".env")
+
+
+def load_env_file(path: Path = ENV_PATH) -> None:
+    if not path.exists():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip("'").strip('"')
+        if key and key not in os.environ:
+            os.environ[key] = value
 
 
 def parse_args() -> argparse.Namespace:
+    load_env_file()
+    default_url = os.getenv("GYM_HISTORY_URL", DEFAULT_URL)
     parser = argparse.ArgumentParser(description="Fetch gym history JSON from local API")
-    parser.add_argument("--url", default=DEFAULT_URL, help="API endpoint URL")
+    parser.add_argument("--url", default=default_url, help="API endpoint URL")
     parser.add_argument(
         "--summary",
         action="store_true",
