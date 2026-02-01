@@ -163,6 +163,49 @@ def rep_cap_for_exercise(exercise: str) -> int:
     return 10
 
 
+def round_weight(value: float, step: float = 0.5) -> float:
+    if step <= 0:
+        return value
+    return round(value / step) * step
+
+
+def progress_to_next_increase(
+    df: pd.DataFrame, exercise: str, increase_pct: float = 0.03, step: float = 0.5
+) -> dict:
+    session = latest_session(df, exercise)
+    cap = rep_cap_for_exercise(exercise)
+    sets_at_cap = 0
+    for set_num in (1, 2, 3):
+        row = session[session["setNumber"] == set_num]
+        reps = int(row.iloc[0]["reps"]) if not row.empty else 0
+        if reps >= cap:
+            sets_at_cap += 1
+
+    current_weight = None
+    last_date = None
+    if not session.empty:
+        current_weight = float(session["weight"].max())
+        last_date = session["date"].max()
+
+    ready = sets_at_cap == 3
+    progress_pct = sets_at_cap / 3 * 100
+    next_weight = None
+    if current_weight is not None and current_weight > 0:
+        next_weight = round_weight(current_weight * (1 + increase_pct), step=step)
+
+    return {
+        "exercise": exercise,
+        "cap": cap,
+        "sets_at_cap": sets_at_cap,
+        "progress_pct": progress_pct,
+        "ready": ready,
+        "current_weight": current_weight,
+        "next_weight": next_weight,
+        "last_date": last_date,
+        "increase_pct": increase_pct * 100,
+    }
+
+
 def progression_status(session: pd.DataFrame, cap: int) -> dict:
     missing = 0
     ready = True

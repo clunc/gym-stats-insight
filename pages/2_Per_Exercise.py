@@ -13,6 +13,7 @@ from app_utils import (
     e1rm_series,
     exercise_snapshot,
     load_app_data,
+    progress_to_next_increase,
 )
 
 st.title("Per-Exercise View")
@@ -67,6 +68,30 @@ def render_exercise_view(selected_exercise: str) -> None:
     col2.metric("Total Reps", snapshot["total_reps"])
     col3.metric("Total Volume", f"{snapshot['total_volume']:.0f} kg")
     col4.metric("Best Weight", f"{snapshot['best_weight']:.1f} kg")
+
+    st.subheader("Progress to Next Increase")
+    progress = progress_to_next_increase(df, selected_exercise)
+    if progress["current_weight"] is None:
+        st.caption("No recent session to evaluate progression.")
+    else:
+        if progress["ready"]:
+            if progress["next_weight"] is None:
+                st.success(f"\U0001F3AF READY: {selected_exercise} is ready to increase.")
+            else:
+                st.success(
+                    f"\U0001F3AF READY: {selected_exercise} {progress['current_weight']:.1f} kg "
+                    f"\u2192 {progress['next_weight']:.1f} kg (+{progress['increase_pct']:.0f}%)"
+                )
+        else:
+            st.info(
+                f"{progress['sets_at_cap']}/3 sets at cap ({progress['cap']} reps) "
+                f"\u2192 {progress['progress_pct']:.0f}% to next weight increase"
+            )
+            if progress["next_weight"] is not None:
+                st.caption(
+                    f"Target: {progress['current_weight']:.1f} kg \u2192 "
+                    f"{progress['next_weight']:.1f} kg (+{progress['increase_pct']:.0f}%)"
+                )
 
     st.subheader("Current E1RM")
     if latest["current"] is None:
