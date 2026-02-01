@@ -243,10 +243,6 @@ col1.metric("Ready to Progress", ready_count)
 col2.metric("Plateaued", plateaued_count)
 col3.metric("In Progress", in_progress_count)
 
-if ready_exercises:
-    with st.expander("Ready exercises"):
-        st.success("Ready: " + ", ".join(ready_exercises))
-
 st.subheader("Current 1ERM per Exercise")
 latest_1rm = latest_1rm_table(df)
 if latest_1rm.empty:
