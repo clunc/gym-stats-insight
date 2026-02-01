@@ -32,7 +32,7 @@ if not exercises:
 def render_exercise_view(selected_exercise: str) -> None:
     time_range = st.radio(
         "Time Range",
-        ("1M", "3M", "6M", "YTD", "1Y", "All"),
+        ("1W", "1M", "3M", "6M", "YTD", "1Y", "All"),
         horizontal=True,
         key=f"time_range_{selected_exercise}",
     )
@@ -47,6 +47,9 @@ def render_exercise_view(selected_exercise: str) -> None:
     if time_range != "All":
         if time_range == "YTD":
             cutoff = pd.Timestamp(year=max_date.year, month=1, day=1, tz=max_date.tz)
+            series = series[series["timestamp"] >= cutoff]
+        elif time_range == "1W":
+            cutoff = max_date - pd.DateOffset(weeks=1)
             series = series[series["timestamp"] >= cutoff]
         else:
             months = {"1M": 1, "3M": 3, "6M": 6, "1Y": 12}[time_range]

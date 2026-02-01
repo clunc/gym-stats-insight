@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pandas as pd
 import streamlit as st
 
 from app_utils import (
@@ -13,7 +14,7 @@ from app_utils import (
     workout_date_bounds,
 )
 
-st.title("Overview (All Time)")
+st.title("Overview")
 
 data = load_app_data()
 if not data:
@@ -21,9 +22,39 @@ if not data:
 
 _, template, df = data
 
+workouts = df[df["type"] == "workout"]
+if workouts.empty:
+    st.info("No workout data available.")
+    st.stop()
+
+time_range = st.radio(
+    "Time Range",
+    ("1W", "1M", "3M", "6M", "YTD", "1Y", "All"),
+    horizontal=True,
+    key="overview_time_range",
+)
+
+max_date = workouts["timestamp"].max()
+cutoff = None
+if time_range != "All":
+    if time_range == "YTD":
+        cutoff = pd.Timestamp(year=max_date.year, month=1, day=1, tz=max_date.tz)
+    elif time_range == "1W":
+        cutoff = max_date - pd.DateOffset(weeks=1)
+    else:
+        months = {"1M": 1, "3M": 3, "6M": 6, "1Y": 12}[time_range]
+        cutoff = max_date - pd.DateOffset(months=months)
+
+if cutoff is not None:
+    df = df[df["timestamp"] >= cutoff].copy()
+    workouts = df[df["type"] == "workout"]
+
 first_date, last_date = workout_date_bounds(df)
 if first_date is not None:
-    st.caption(f"Since first logged workout on {first_date.date()}")
+    if cutoff is not None:
+        st.caption(f"Showing data since {first_date.date()}")
+    else:
+        st.caption(f"Since first logged workout on {first_date.date()}")
 
 summary = compute_summary(df)
 
