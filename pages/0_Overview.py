@@ -15,6 +15,7 @@ from app_utils import (
     progression_event_summary,
     stagnation_flag_in_period,
     volume_trend,
+    weekly_streak_metrics,
     weekly_volume_metrics,
     workout_date_bounds,
 )
@@ -200,12 +201,17 @@ else:
 
 st.subheader("Summary")
 summary = compute_summary(df)
+streaks = weekly_streak_metrics(full_df)
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Total Sessions", summary["total_sessions"])
 col2.metric("Total Sets", summary["total_sets"])
 col3.metric("Total Reps", summary["total_reps"])
 col4.metric("Total Volume", f"{summary['total_volume']:.0f} kg")
+col5.metric(
+    "Overall Streak",
+    f"{streaks['longest_streak_sessions']} days",
+)
 
 st.subheader("Volume Trends")
 volume_df = volume_trend(df, "W")

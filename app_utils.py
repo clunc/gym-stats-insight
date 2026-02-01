@@ -192,6 +192,72 @@ def weekly_volume_metrics(df: pd.DataFrame) -> dict:
     return {"this_week": this_week, "last_week": last_week, "pct_change": pct_change, "avg_4w": avg_4w}
 
 
+def weekly_streak_metrics(df: pd.DataFrame, min_sessions_per_week: int = 2) -> dict:
+    data = df[df["type"].isin(["workout", "sick"])].copy()
+    if data.empty:
+        return {
+            "current_streak_sessions": 0,
+            "longest_streak_sessions": 0,
+            "current_streak_weeks": 0,
+            "longest_streak_weeks": 0,
+        }
+
+    data["week_start"] = data["timestamp"].dt.to_period("W-SUN").apply(lambda p: p.start_time)
+    weekly = (
+        data.groupby("week_start")["date"]
+        .nunique()
+        .rename("sessions_per_week")
+        .reset_index()
+        .sort_values("week_start")
+        .reset_index(drop=True)
+    )
+    week_min = weekly["week_start"].min()
+    week_max = weekly["week_start"].max()
+    full_weeks = pd.DataFrame({"week_start": pd.date_range(start=week_min, end=week_max, freq="W-MON")})
+    weekly = full_weeks.merge(weekly, on="week_start", how="left").fillna({"sessions_per_week": 0})
+    weekly["sessions_per_week"] = weekly["sessions_per_week"].astype(int)
+
+    latest_week = weekly["week_start"].max()
+    weekly["is_completed_week"] = weekly["week_start"] < latest_week
+    weekly["is_qualified_or_open"] = (~weekly["is_completed_week"]) | (
+        weekly["sessions_per_week"] >= min_sessions_per_week
+    )
+
+    # Longest run: completed weeks must qualify; latest week is non-breaking/in-progress.
+    longest_weeks = 0
+    longest_sessions = 0
+    run_weeks = 0
+    run_sessions = 0
+    for row in weekly.itertuples(index=False):
+        if bool(row.is_qualified_or_open):
+            run_weeks += 1
+            run_sessions += int(row.sessions_per_week)
+            if run_sessions > longest_sessions:
+                longest_sessions = run_sessions
+                longest_weeks = run_weeks
+        else:
+            run_weeks = 0
+            run_sessions = 0
+
+    # Current run from latest week backward; latest week never breaks streak.
+    current_weeks = 0
+    current_sessions = 0
+    rows_rev = weekly.sort_values("week_start", ascending=False).itertuples(index=False)
+    for row in rows_rev:
+        if bool(row.is_qualified_or_open):
+            current_weeks += 1
+            current_sessions += int(row.sessions_per_week)
+        else:
+            break
+
+    return {
+        "current_streak_sessions": current_sessions,
+        "longest_streak_sessions": longest_sessions,
+        "current_streak_weeks": current_weeks,
+        "longest_streak_weeks": longest_weeks,
+    }
+
+
 def rep_cap_for_exercise(exercise: str) -> int:
     name = exercise.lower()
     if "deadlift" in name or "squat" in name or "pull up" in name or "pull-up" in name:
