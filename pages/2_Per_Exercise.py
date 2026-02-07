@@ -283,16 +283,27 @@ def render_exercise_view(selected_exercise: str) -> None:
         st.caption("Green line: upper cap | Orange line: lower cap")
 
         st.subheader("Fatigue & Recovery")
+        rep_sets_raw = ex_df.pivot_table(index="date", columns="setNumber", values="reps", aggfunc="max")
+        set_numbers = []
+        for col in rep_sets_raw.columns:
+            try:
+                set_numbers.append(int(col))
+            except (TypeError, ValueError):
+                continue
+        set_numbers = sorted(set_numbers)
         rep_sets = (
-            ex_df.pivot_table(index="date", columns="setNumber", values="reps", aggfunc="max")
-            .rename(columns={1: "set1", 2: "set2", 3: "set3"})
+            rep_sets_raw.rename(columns={num: f"set{num}" for num in set_numbers})
             .reset_index()
             .sort_values("date")
         )
-        rep_sets["dropoff_pct"] = (
-            ((rep_sets["set1"] - rep_sets["set3"]) / rep_sets["set1"].where(rep_sets["set1"] > 0)) * 100
-        )
-        rep_sets["dropoff_pct"] = rep_sets["dropoff_pct"].clip(lower=0)
+        if set_numbers and set_numbers[0] == 1 and len(set_numbers) > 1:
+            last_set_col = f"set{set_numbers[-1]}"
+            rep_sets["dropoff_pct"] = (
+                ((rep_sets["set1"] - rep_sets[last_set_col]) / rep_sets["set1"].where(rep_sets["set1"] > 0)) * 100
+            )
+            rep_sets["dropoff_pct"] = rep_sets["dropoff_pct"].clip(lower=0)
+        else:
+            rep_sets["dropoff_pct"] = pd.NA
         fatigue_score = rep_sets["dropoff_pct"].dropna().mean() if rep_sets["dropoff_pct"].notna().any() else None
         latest_dropoff = (
             rep_sets["dropoff_pct"].dropna().iloc[-1] if rep_sets["dropoff_pct"].notna().any() else None
@@ -333,12 +344,8 @@ def render_exercise_view(selected_exercise: str) -> None:
 
         set_pattern = pd.DataFrame(
             {
-                "set": ["Set 1", "Set 2", "Set 3"],
-                "avg_reps": [
-                    rep_sets["set1"].mean(),
-                    rep_sets["set2"].mean(),
-                    rep_sets["set3"].mean(),
-                ],
+                "set": [f"Set {num}" for num in set_numbers],
+                "avg_reps": [rep_sets[f"set{num}"].mean() for num in set_numbers],
             }
         ).dropna()
         if not set_pattern.empty:
@@ -356,11 +363,8 @@ def render_exercise_view(selected_exercise: str) -> None:
 
         e1rm = e1rm_series(df, selected_exercise)
         e1rm_by_date = e1rm.groupby("date", as_index=False)["estimate"].max()
-        sets = (
-            ex_df.pivot_table(index="date", columns="setNumber", values="reps", aggfunc="max")
-            .rename(columns={1: "reps_set1", 2: "reps_set2", 3: "reps_set3"})
-            .reset_index()
-        )
+        sets_raw = ex_df.pivot_table(index="date", columns="setNumber", values="reps", aggfunc="max")
+        sets = sets_raw.rename(columns={num: f"reps_set{num}" for num in set_numbers}).reset_index()
         weights = ex_df.groupby("date", as_index=False)["weight"].max().rename(columns={"weight": "weight"})
         volume = ex_df.groupby("date", as_index=False).apply(
             lambda frame: float((frame["weight"] * frame["reps"]).sum())
