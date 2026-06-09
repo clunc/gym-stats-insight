@@ -1,0 +1,35 @@
+name: Build and push image
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build and push
+        run: |
+          IMAGE=ghcr.io/${{ github.repository }}
+          SHA_TAG=sha-$(echo ${{ github.sha }} | cut -c1-7)
+
+          docker build -t ${IMAGE}:main -t ${IMAGE}:${SHA_TAG} .
+
+          docker push ${IMAGE}:main
+          docker push ${IMAGE}:${SHA_TAG}
+
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF_NAME#v}
+            docker tag ${IMAGE}:main ${IMAGE}:${VERSION}
+            docker push ${IMAGE}:${VERSION}
+          fi
